@@ -5,7 +5,24 @@ pub enum Command {
     Set(String, String),
 }
 
-pub fn parse(input: &str) -> Result<Command, String> {
+#[derive(Debug, PartialEq)]
+pub enum ParseError {
+    UnknownCommand,
+    MissingKey,
+    MissingValue,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::UnknownCommand => write!(f, "Unknown command"),
+            ParseError::MissingKey => write!(f, "Key is missing"),
+            ParseError::MissingValue => write!(f, "Value is missing"),
+        }
+    }
+}
+
+pub fn parse(input: &str) -> Result<Command, ParseError> {
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
 
     match parts.get(0) {
@@ -14,17 +31,15 @@ pub fn parse(input: &str) -> Result<Command, String> {
             if let Some(key) = parts.get(1) {
                 Ok(Command::Get(key.to_string()))
             } else {
-                Err("GET command requires a key".into())
+                Err(ParseError::MissingKey)
             }
         }
-        Some(&"SET") => {
-            if let (Some(key), Some(value)) = (parts.get(1), parts.get(2)) {
-                Ok(Command::Set(key.to_string(), value.to_string()))
-            } else {
-                Err("SET command requires key and value".into())
-            }
-        }
-        _ => Err("Unknown command".into()),
+        Some(&"SET") => match (parts.get(1), parts.get(2)) {
+            (Some(key), Some(value)) => Ok(Command::Set(key.to_string(), value.to_string())),
+            (None, _) => Err(ParseError::MissingKey),
+            (_, None) => Err(ParseError::MissingValue),
+        },
+        _ => Err(ParseError::UnknownCommand),
     }
 }
 
@@ -52,6 +67,24 @@ mod tests {
         match get {
             Command::Get(k) => assert_eq!(k, "mykey"),
             _ => panic!("Expected Get command"),
+        }
+    }
+
+    #[test]
+    fn test_unknown_command() {
+        let unknown = parse("cute doom turtle");
+        match unknown {
+            Ok(_) => panic!("Test unknown command failed"),
+            Err(err) => assert_eq!(err, ParseError::UnknownCommand),
+        }
+    }
+
+    #[test]
+    fn test_missing_key() {
+        let missing_key = parse("GET");
+        match missing_key {
+            Ok(_) => panic!("Get missing key failed"),
+            Err(err) => assert_eq!(err, ParseError::MissingKey),
         }
     }
 }
