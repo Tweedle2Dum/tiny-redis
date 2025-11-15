@@ -3,6 +3,9 @@ pub enum Command {
     Ping,
     Get(String),
     Set(String, String),
+    Del(String),
+    Exists(String),
+    Inc(String)
 }
 
 #[derive(Debug, PartialEq)]
@@ -39,6 +42,27 @@ pub fn parse(input: &str) -> Result<Command, ParseError> {
             (None, _) => Err(ParseError::MissingKey),
             (_, None) => Err(ParseError::MissingValue),
         },
+        Some(&"DEL") => {
+            if let Some(key) = parts.get(1) {
+                Ok(Command::Del(key.to_string()))
+            } else {
+                Err(ParseError::MissingKey)
+            }
+        },
+        Some(&"EXISTS") => {
+            if let Some(key) = parts.get(1){
+                Ok(Command::Exists(key.to_string()))
+            } else {
+                Err(ParseError::MissingKey)
+            }
+        },
+        Some(&"INC") => {
+            if let Some(key) = parts.get(1){
+                Ok(Command::Inc(key.to_string()))
+            } else {
+                Err(ParseError::MissingKey)
+            }
+        }
         _ => Err(ParseError::UnknownCommand),
     }
 }
@@ -85,6 +109,15 @@ mod tests {
         match missing_key {
             Ok(_) => panic!("Get missing key failed"),
             Err(err) => assert_eq!(err, ParseError::MissingKey),
+        }
+    }
+    
+    #[test]
+    fn test_increment() {
+        let inc = parse("INC 23");
+        match inc {
+            Ok(Command::Inc(key)) => assert_eq!(key,"23"),
+            _ => panic!("INC test failed") 
         }
     }
 }
