@@ -5,7 +5,7 @@ pub enum Command {
     Set(String, String),
     Del(String),
     Exists(String),
-    Inc(String)
+    Inc(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,16 +48,16 @@ pub fn parse(input: &str) -> Result<Command, ParseError> {
             } else {
                 Err(ParseError::MissingKey)
             }
-        },
+        }
         Some(&"EXISTS") => {
-            if let Some(key) = parts.get(1){
+            if let Some(key) = parts.get(1) {
                 Ok(Command::Exists(key.to_string()))
             } else {
                 Err(ParseError::MissingKey)
             }
-        },
+        }
         Some(&"INC") => {
-            if let Some(key) = parts.get(1){
+            if let Some(key) = parts.get(1) {
                 Ok(Command::Inc(key.to_string()))
             } else {
                 Err(ParseError::MissingKey)
@@ -111,13 +111,13 @@ mod tests {
             Err(err) => assert_eq!(err, ParseError::MissingKey),
         }
     }
-    
+
     #[test]
     fn test_increment() {
         let inc = parse("INC 23");
         match inc {
-            Ok(Command::Inc(key)) => assert_eq!(key,"23"),
-            _ => panic!("INC test failed") 
+            Ok(Command::Inc(key)) => assert_eq!(key, "23"),
+            _ => panic!("INC test failed"),
         }
     }
 }

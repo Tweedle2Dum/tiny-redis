@@ -1,15 +1,13 @@
-use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 
-mod parser;
-mod executor;
 mod db;
+mod executor;
+mod parser;
 
-
-
-use parser::parse;
-use executor::Executor;
 use db::Db;
+use executor::Executor;
+use parser::parse;
 
 fn handle_client(mut stream: TcpStream, db: &mut Db) {
     let mut executor = Executor::new(db);
@@ -46,7 +44,7 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(stream) => handle_client(stream, &mut db), 
+            Ok(stream) => handle_client(stream, &mut db),
             Err(e) => eprintln!("Connection failed: {}", e),
         }
     }

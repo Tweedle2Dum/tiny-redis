@@ -1,5 +1,5 @@
-use crate::parser::Command;
 use crate::db::Db;
+use crate::parser::Command;
 
 pub struct Executor<'a> {
     db: &'a mut Db,
@@ -20,9 +20,7 @@ impl<'a> Executor<'a> {
         match cmd {
             Command::Ping => Ok("PONG".into()),
 
-            Command::Get(key) => {
-                self.db.get(&key).ok_or(ExecError::KeyNotFound)
-            }
+            Command::Get(key) => self.db.get(&key).ok_or(ExecError::KeyNotFound),
 
             Command::Set(key, value) => {
                 self.db.set(key, value);
@@ -37,9 +35,7 @@ impl<'a> Executor<'a> {
                 }
             }
 
-            Command::Exists(key) => {
-                Ok((self.db.get(&key).is_some() as i32).to_string())
-            }
+            Command::Exists(key) => Ok((self.db.get(&key).is_some() as i32).to_string()),
 
             Command::Inc(key) => {
                 let val = self.db.get(&key).unwrap_or("0".into());
