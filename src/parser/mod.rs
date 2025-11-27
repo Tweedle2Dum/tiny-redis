@@ -1,123 +1,73 @@
-#[derive(Debug, PartialEq)]
-pub enum Command {
-    Ping,
-    Get(String),
-    Set(String, String),
-    Del(String),
-    Exists(String),
-    Inc(String),
+fn find_crlf(buffer: &[u8]) -> Option<usize> {
+    for i in 0..buffer.len().saturating_sub(1) {
+        if buffer[i] == b'\r' && buffer[i + 1] == b'\n' {
+            return Some(i);
+        }
+    }
+    None
 }
 
-#[derive(Debug, PartialEq)]
+enum RespValue {
+    Simple(String),
+    Integer(i64),
+    Bulk(String),
+    Array(Vec<RespValue>)
+}
+
+enum ParseOneResponse {
+    RespValue(RespValue, usize),
+    Incomplete,
+}
+
 pub enum ParseError {
-    UnknownCommand,
-    MissingKey,
-    MissingValue,
+    Incomplete,
+    InvalidType,
+    Other(String),
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseError::UnknownCommand => write!(f, "Unknown command"),
-            ParseError::MissingKey => write!(f, "Key is missing"),
-            ParseError::MissingValue => write!(f, "Value is missing"),
-        }
+fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+    if buffer.is_empty() {
+        return Err(ParseError::Incomplete);
     }
-}
 
-pub fn parse(input: &str) -> Result<Command, ParseError> {
-    let parts: Vec<&str> = input.trim().split_whitespace().collect();
-
-    match parts.get(0) {
-        Some(&"PING") => Ok(Command::Ping),
-        Some(&"GET") => {
-            if let Some(key) = parts.get(1) {
-                Ok(Command::Get(key.to_string()))
-            } else {
-                Err(ParseError::MissingKey)
-            }
-        }
-        Some(&"SET") => match (parts.get(1), parts.get(2)) {
-            (Some(key), Some(value)) => Ok(Command::Set(key.to_string(), value.to_string())),
-            (None, _) => Err(ParseError::MissingKey),
-            (_, None) => Err(ParseError::MissingValue),
-        },
-        Some(&"DEL") => {
-            if let Some(key) = parts.get(1) {
-                Ok(Command::Del(key.to_string()))
-            } else {
-                Err(ParseError::MissingKey)
-            }
-        }
-        Some(&"EXISTS") => {
-            if let Some(key) = parts.get(1) {
-                Ok(Command::Exists(key.to_string()))
-            } else {
-                Err(ParseError::MissingKey)
-            }
-        }
-        Some(&"INC") => {
-            if let Some(key) = parts.get(1) {
-                Ok(Command::Inc(key.to_string()))
-            } else {
-                Err(ParseError::MissingKey)
-            }
-        }
-        _ => Err(ParseError::UnknownCommand),
+    match buffer[0] as char {
+        '+' => parse_simple_string(buffer),
+        ':' => parse_integer(buffer),
+        '$' => parse_bulk_string(buffer),
+        '*' => parse_array(buffer),
+        _   => Err(ParseError::InvalidType),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn parse_simple_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+    let pos = match find_crlf(buffer) {
+        Some(p) => p,
+        None => return Err(ParseError::Incomplete),
+    };
 
-    #[test]
-    fn test_ping() {
-        assert_eq!(parse("PING").unwrap(), Command::Ping);
-    }
+    let content = &buffer[1..pos]; // skip '+' and till pos - 1 
 
-    #[test]
-    fn test_set_get() {
-        let set = parse("SET mykey 123").unwrap();
-        match set {
-            Command::Set(k, v) => {
-                assert_eq!(k, "mykey");
-                assert_eq!(v, "123");
-            }
-            _ => panic!("Expected Set command"),
-        }
+    //try converting byte slice to utf8. if invalid utf8 fuck all
+    let s = std::str::from_utf8(content)
+        .map_err(|_| ParseError::Other("invalid utf8".into()))?;
 
-        let get = parse("GET mykey").unwrap();
-        match get {
-            Command::Get(k) => assert_eq!(k, "mykey"),
-            _ => panic!("Expected Get command"),
-        }
-    }
+    Ok(ParseOneResponse::RespValue(
+        RespValue::Simple(s.to_string()),
+        pos + 2, // consumed bytes
+    ))
+}
 
-    #[test]
-    fn test_unknown_command() {
-        let unknown = parse("cute doom turtle");
-        match unknown {
-            Ok(_) => panic!("Test unknown command failed"),
-            Err(err) => assert_eq!(err, ParseError::UnknownCommand),
-        }
-    }
+fn parse_integer(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+    println!("TODO: integer");
+    Err(ParseError::Incomplete)
+}
 
-    #[test]
-    fn test_missing_key() {
-        let missing_key = parse("GET");
-        match missing_key {
-            Ok(_) => panic!("Get missing key failed"),
-            Err(err) => assert_eq!(err, ParseError::MissingKey),
-        }
-    }
+fn parse_bulk_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+    println!("TODO: bulk string");
+    Err(ParseError::Incomplete)
+}
 
-    #[test]
-    fn test_increment() {
-        let inc = parse("INC 23");
-        match inc {
-            Ok(Command::Inc(key)) => assert_eq!(key, "23"),
-            _ => panic!("INC test failed"),
-        }
-    }
+fn parse_array(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+    println!("TODO: array");
+    Err(ParseError::Incomplete)
 }
