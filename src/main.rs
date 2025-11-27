@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{ BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 mod db;
@@ -6,32 +6,54 @@ mod executor;
 mod parser;
 
 use db::Db;
-use executor::Executor;
-use parser::parse;
+use parser::{ parse_one, ParseOneResponse, ParseError};
+
+
+
 
 fn handle_client(mut stream: TcpStream, db: &mut Db) {
-    let mut executor = Executor::new(db);
     let peer = stream.peer_addr().unwrap();
     println!("Client connected: {}", peer);
 
-    let reader = BufReader::new(stream.try_clone().unwrap());
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut client_buffer: Vec<u8> = Vec::new();
 
-    for line in reader.lines() {
-        let line = line.unwrap();
-        if line.trim().eq_ignore_ascii_case("QUIT") {
-            break;
-        }
+    let mut byte_buf = [0u8; 1];
 
-        let response = match parse(&line) {
-            Ok(cmd) => match executor.execute(cmd) {
-                Ok(out) => out,
-                Err(err) => format!("ERR {:?}", err),
-            },
-            Err(err) => format!("Parse error: {:?}", err),
+    loop {
+        let n = match reader.read(&mut byte_buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
         };
 
-        let resp = format!("{}\r\n", response);
-        stream.write_all(resp.as_bytes()).unwrap();
+        client_buffer.extend_from_slice(&byte_buf[..n]);
+        println!("RAW BYTES = {:?}", client_buffer);
+
+        loop {
+            match parse_one(&client_buffer) {
+                Ok(ParseOneResponse::RespValue(resp, consumed)) => {
+                    println!("Parsed: {:?}", resp);
+
+                    let txt = format!("{:?}\r\n", resp);
+                    stream.write_all(txt.as_bytes()).unwrap();
+
+                    // Remove parsed bytes
+                    client_buffer.drain(0..consumed);
+                }
+                
+                Err(ParseError::Incomplete) => {
+                    break;
+                }
+
+                Err(err) => {
+                    let txt = format!("ERR {:?}\r\n", err);
+                    stream.write_all(txt.as_bytes()).unwrap();
+                    client_buffer.clear();
+                    break;
+                }
+            }
+        }
     }
 
     println!("Client disconnected: {}", peer);

@@ -7,25 +7,26 @@ fn find_crlf(buffer: &[u8]) -> Option<usize> {
     None
 }
 
-enum RespValue {
+#[derive(Debug)]
+pub enum RespValue {
     Simple(String),
     Integer(i64),
     Bulk(String),
     Array(Vec<RespValue>)
 }
 
-enum ParseOneResponse {
+pub enum ParseOneResponse {
     RespValue(RespValue, usize),
-    Incomplete,
 }
 
+#[derive(Debug)]
 pub enum ParseError {
     Incomplete,
     InvalidType,
     Other(String),
 }
 
-fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+pub fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
     if buffer.is_empty() {
         return Err(ParseError::Incomplete);
     }
