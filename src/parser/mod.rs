@@ -12,7 +12,7 @@ pub enum RespValue {
     Simple(String),
     Integer(i64),
     Bulk(String),
-    Array(Vec<RespValue>)
+    Array(Vec<RespValue>),
 }
 
 pub enum ParseOneResponse {
@@ -36,7 +36,7 @@ pub fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
         ':' => parse_integer(buffer),
         '$' => parse_bulk_string(buffer),
         '*' => parse_array(buffer),
-        _   => Err(ParseError::InvalidType),
+        _ => Err(ParseError::InvalidType),
     }
 }
 
@@ -49,8 +49,7 @@ fn parse_simple_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
     let content = &buffer[1..pos]; // skip '+' and till pos - 1 
 
     //try converting byte slice to utf8. if invalid utf8 fuck all
-    let s = std::str::from_utf8(content)
-        .map_err(|_| ParseError::Other("invalid utf8".into()))?;
+    let s = std::str::from_utf8(content).map_err(|_| ParseError::Other("invalid utf8".into()))?;
 
     Ok(ParseOneResponse::RespValue(
         RespValue::Simple(s.to_string()),
