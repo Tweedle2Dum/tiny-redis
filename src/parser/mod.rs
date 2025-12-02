@@ -16,10 +16,6 @@ pub enum RespValue {
     Null,
 }
 
-pub enum ParseOneResponse {
-    RespValue(RespValue, usize),
-}
-
 #[derive(Debug)]
 pub enum ParseError {
     Incomplete,
@@ -27,7 +23,9 @@ pub enum ParseError {
     Other(String),
 }
 
-pub fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
+/// Parses a single RESP value from the buffer.
+/// Returns (RespValue, bytes_consumed) on success.
+pub fn parse_one(buffer: &[u8]) -> Result<(RespValue, usize), ParseError> {
     if buffer.is_empty() {
         return Err(ParseError::Incomplete);
     }
@@ -41,31 +39,18 @@ pub fn parse_one(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
     }
 }
 
-fn parse_simple_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
-    let pos = match find_crlf(buffer) {
-        Some(p) => p,
-        None => return Err(ParseError::Incomplete),
-    };
+fn parse_simple_string(buffer: &[u8]) -> Result<(RespValue, usize), ParseError> {
+    let pos = find_crlf(buffer).ok_or(ParseError::Incomplete)?;
 
-    let content = &buffer[1..pos]; // skip '+' and till pos - 1 
-
-    //try converting byte slice to utf8. if invalid utf8 fuck all
+    let content = &buffer[1..pos];
     let s = std::str::from_utf8(content).map_err(|_| ParseError::Other("invalid utf8".into()))?;
 
-    Ok(ParseOneResponse::RespValue(
-        RespValue::Simple(s.to_string()),
-        pos + 2, // consumed bytes
-    ))
+    Ok((RespValue::Simple(s.to_string()), pos + 2))
 }
 
-fn parse_integer(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
-    // Find CRLF
-    let pos = match find_crlf(buffer) {
-        Some(p) => p,
-        None => return Err(ParseError::Incomplete),
-    };
+fn parse_integer(buffer: &[u8]) -> Result<(RespValue, usize), ParseError> {
+    let pos = find_crlf(buffer).ok_or(ParseError::Incomplete)?;
 
-    // Parse the number (skip ':')
     let num_str = std::str::from_utf8(&buffer[1..pos])
         .map_err(|_| ParseError::Other("invalid utf8 in integer".into()))?;
 
@@ -73,20 +58,12 @@ fn parse_integer(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
         .parse()
         .map_err(|_| ParseError::Other("invalid integer".into()))?;
 
-    Ok(ParseOneResponse::RespValue(
-        RespValue::Integer(num),
-        pos + 2, // consumed bytes including \r\n
-    ))
+    Ok((RespValue::Integer(num), pos + 2))
 }
 
-fn parse_bulk_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
-    // Find first CRLF to get the length
-    let pos = match find_crlf(buffer) {
-        Some(p) => p,
-        None => return Err(ParseError::Incomplete),
-    };
+fn parse_bulk_string(buffer: &[u8]) -> Result<(RespValue, usize), ParseError> {
+    let pos = find_crlf(buffer).ok_or(ParseError::Incomplete)?;
 
-    // Parse the length (skip '$')
     let len_str = std::str::from_utf8(&buffer[1..pos])
         .map_err(|_| ParseError::Other("invalid utf8 in length".into()))?;
 
@@ -94,48 +71,35 @@ fn parse_bulk_string(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
         .parse()
         .map_err(|_| ParseError::Other("invalid length".into()))?;
 
-    // Handle null bulk string
     if len == -1 {
-        return Ok(ParseOneResponse::RespValue(RespValue::Null, pos + 2));
+        return Ok((RespValue::Null, pos + 2));
     }
 
-    // Validate length
     if len < 0 {
         return Err(ParseError::Other("negative length".into()));
     }
 
     let len = len as usize;
-    let data_start = pos + 2; // after first CRLF
+    let data_start = pos + 2;
     let data_end = data_start + len;
 
-    // Check if we have enough bytes
     if buffer.len() < data_end + 2 {
         return Err(ParseError::Incomplete);
     }
 
-    // Verify trailing CRLF
     if buffer[data_end] != b'\r' || buffer[data_end + 1] != b'\n' {
         return Err(ParseError::Other("missing CRLF after bulk string".into()));
     }
 
-    // Extract the actual string
     let content = &buffer[data_start..data_end];
     let s = std::str::from_utf8(content).map_err(|_| ParseError::Other("invalid utf8".into()))?;
 
-    Ok(ParseOneResponse::RespValue(
-        RespValue::Bulk(s.to_string()),
-        data_end + 2, // consumed all bytes including trailing CRLF
-    ))
+    Ok((RespValue::Bulk(s.to_string()), data_end + 2))
 }
 
-fn parse_array(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
-    // Find arr length
-    let pos = match find_crlf(buffer) {
-        Some(p) => p,
-        None => return Err(ParseError::Incomplete),
-    };
+fn parse_array(buffer: &[u8]) -> Result<(RespValue, usize), ParseError> {
+    let pos = find_crlf(buffer).ok_or(ParseError::Incomplete)?;
 
-    // Parse the count (skip '*')
     let count_str = std::str::from_utf8(&buffer[1..pos])
         .map_err(|_| ParseError::Other("invalid utf8 in count".into()))?;
 
@@ -143,36 +107,26 @@ fn parse_array(buffer: &[u8]) -> Result<ParseOneResponse, ParseError> {
         .parse()
         .map_err(|_| ParseError::Other("invalid count".into()))?;
 
-    // Handle null array
     if count == -1 {
-        return Ok(ParseOneResponse::RespValue(RespValue::Null, pos + 2));
+        return Ok((RespValue::Null, pos + 2));
     }
 
-    // Validate count
     if count < 0 {
         return Err(ParseError::Other("negative count".into()));
     }
 
     let count = count as usize;
     let mut elements = Vec::with_capacity(count);
-    let mut total_consumed = pos + 2; // Skip past *N\r\n
+    let mut total_consumed = pos + 2;
 
-    // Parse each element
     for _ in 0..count {
         let remaining = &buffer[total_consumed..];
-
-        match parse_one(remaining)? {
-            ParseOneResponse::RespValue(val, consumed) => {
-                elements.push(val);
-                total_consumed += consumed;
-            }
-        }
+        let (val, consumed) = parse_one(remaining)?;
+        elements.push(val);
+        total_consumed += consumed;
     }
 
-    Ok(ParseOneResponse::RespValue(
-        RespValue::Array(elements),
-        total_consumed,
-    ))
+    Ok((RespValue::Array(elements), total_consumed))
 }
 
 #[cfg(test)]
@@ -181,21 +135,20 @@ mod tests {
 
     #[test]
     fn test_parse_array_simple() {
-        // *2\r\n$3\r\nGET\r\n$3\r\nkey\r\n
         let input = b"*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Array(arr), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Array(arr) => {
                 assert_eq!(arr.len(), 2);
                 assert_eq!(consumed, 22);
 
-                // Check first element
                 match &arr[0] {
                     RespValue::Bulk(s) => assert_eq!(s, "GET"),
                     _ => panic!("Expected bulk string"),
                 }
 
-                // Check second element
                 match &arr[1] {
                     RespValue::Bulk(s) => assert_eq!(s, "key"),
                     _ => panic!("Expected bulk string"),
@@ -207,11 +160,12 @@ mod tests {
 
     #[test]
     fn test_parse_array_set_command() {
-        // *3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n
         let input = b"*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Array(arr), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Array(arr) => {
                 assert_eq!(arr.len(), 3);
                 assert_eq!(consumed, 37);
 
@@ -234,11 +188,12 @@ mod tests {
 
     #[test]
     fn test_parse_array_ping() {
-        // *1\r\n$4\r\nPING\r\n
         let input = b"*1\r\n$4\r\nPING\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Array(arr), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Array(arr) => {
                 assert_eq!(arr.len(), 1);
                 assert_eq!(consumed, 14);
 
@@ -253,11 +208,12 @@ mod tests {
 
     #[test]
     fn test_parse_array_empty() {
-        // *0\r\n
         let input = b"*0\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Array(arr), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Array(arr) => {
                 assert_eq!(arr.len(), 0);
                 assert_eq!(consumed, 4);
             }
@@ -267,11 +223,12 @@ mod tests {
 
     #[test]
     fn test_parse_array_null() {
-        // *-1\r\n
         let input = b"*-1\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Null, consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Null => {
                 assert_eq!(consumed, 5);
             }
             _ => panic!("Expected null array"),
@@ -280,22 +237,22 @@ mod tests {
 
     #[test]
     fn test_parse_array_incomplete() {
-        // *2\r\n$3\r\nGET\r\n (missing second element)
         let input = b"*2\r\n$3\r\nGET\r\n";
 
         match parse_one(input) {
-            Err(ParseError::Incomplete) => {} // Expected
+            Err(ParseError::Incomplete) => {}
             _ => panic!("Expected Incomplete error"),
         }
     }
 
     #[test]
     fn test_parse_array_mixed_types() {
-        // *3\r\n+OK\r\n:42\r\n$5\r\nhello\r\n
         let input = b"*3\r\n+OK\r\n:42\r\n$5\r\nhello\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Array(arr), _)) => {
+        let (value, _) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Array(arr) => {
                 assert_eq!(arr.len(), 3);
 
                 match &arr[0] {
@@ -317,11 +274,12 @@ mod tests {
 
     #[test]
     fn test_parse_bulk_string() {
-        // $5\r\nhello\r\n
         let input = b"$5\r\nhello\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Bulk(s), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Bulk(s) => {
                 assert_eq!(s, "hello");
                 assert_eq!(consumed, 11);
             }
@@ -331,11 +289,12 @@ mod tests {
 
     #[test]
     fn test_parse_bulk_string_null() {
-        // $-1\r\n
         let input = b"$-1\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Null, consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Null => {
                 assert_eq!(consumed, 5);
             }
             _ => panic!("Expected null bulk string"),
@@ -344,11 +303,12 @@ mod tests {
 
     #[test]
     fn test_parse_integer() {
-        // :42\r\n
         let input = b":42\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Integer(n), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Integer(n) => {
                 assert_eq!(n, 42);
                 assert_eq!(consumed, 5);
             }
@@ -358,11 +318,12 @@ mod tests {
 
     #[test]
     fn test_parse_integer_negative() {
-        // :-100\r\n
         let input = b":-100\r\n";
 
-        match parse_one(input) {
-            Ok(ParseOneResponse::RespValue(RespValue::Integer(n), consumed)) => {
+        let (value, consumed) = parse_one(input).unwrap();
+
+        match value {
+            RespValue::Integer(n) => {
                 assert_eq!(n, -100);
                 assert_eq!(consumed, 7);
             }
