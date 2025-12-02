@@ -11,7 +11,7 @@ pub enum HandlerResult {
     Ok(Vec<u8>),
 }
 
-pub type Handler = fn(buffer: &Vec<u8>) -> HandlerResult;
+pub type Handler = fn(buffer: &mut Vec<u8>) -> HandlerResult;
 
 pub struct TcpServer {
     listener: TcpListener,
