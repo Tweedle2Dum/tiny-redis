@@ -1,118 +1,217 @@
 # tiny-redis
 
-A tiny, educational Redis-like in-memory datastore built in Rust.  
-The goal of this project is to understand how Redis works under the hood — protocols, command handling, in-memory storage, concurrency, and networking — without the complexity of the full Redis codebase.
+A minimal, educational Redis-like in-memory datastore built in Rust.
 
-This project **is not a full Redis clone**, but a minimal implementation that you can extend to learn systems programming, network servers, and Rust async patterns.
+This project exists to demystify how Redis works under the hood—covering protocols, command handling, in-memory storage, and TCP networking—without the overwhelming complexity of the full Redis codebase.
 
----
-
-## ✨ Features (current)
-
-- Simple in-memory key–value store  
-- Basic Redis-like commands (`SET`, `GET`, `DEL`, etc.)  
-- Minimal TCP server  
-- Basic text-based protocol (RESP-ish)  
-- Small, readable codebase meant for learning  
+**Not a production Redis replacement**, but a learning-focused implementation you can read, understand, and extend.
 
 ---
 
-## 🚧 Roadmap (next steps)
+## Why tiny-redis?
 
-tiny-redis is intentionally small — but here’s what’s coming next:
+Redis is powerful but has decades of optimizations and a large C codebase. **tiny-redis** strips away the complexity to reveal the core concepts:
 
-- [ ] More commands (`EXISTS`, `INCR`, hashes/lists)  
-- [ ] Proper RESP protocol support  
-- [ ] Multiple clients & concurrency  
-- [ ] Async TCP server (Tokio)  
-- [ ] TTL / key expiration  
-- [ ] Persistence (AOF or snapshot)  
-- [ ] Benchmarks + CI  
-- [ ] Published Rust crate  
+- How TCP servers handle multiple clients
+- How commands are parsed from byte streams
+- How in-memory key-value stores work
+- How async patterns enable concurrency
+
+Perfect for systems programming students, Rustaceans, or anyone curious about database internals.
 
 ---
 
-## 🧰 Getting Started
+## Features
 
-### **Prerequisites**
+- ✅ In-memory key-value store with `HashMap`
+- ✅ RESP (Redis Serialization Protocol) parser
+- ✅ Basic commands: `PING`, `ECHO`, `SET`, `GET`, `DEL`
+- ✅ TCP server with connection handling
+- ✅ Incremental command parsing (handles partial/pipelined commands)
+- ✅ Clean, readable codebase (~400 lines)
 
-- Rust (stable)
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Rust (stable channel)
 - Cargo
 
-### **Clone the project**
+### Installation
 
 ```bash
 git clone https://github.com/Tweedle2Dum/tiny-redis
 cd tiny-redis
-Run the server
-bash
-Copy code
+cargo build --release
+```
+
+### Run the Server
+
+```bash
 cargo run
-This starts a small Redis-like TCP server on port 6379 (by default).
+```
 
-Connect using redis-cli
-bash
-Copy code
+The server starts on `127.0.0.1:6379` by default.
+
+### Connect with `redis-cli`
+
+```bash
 redis-cli -p 6379
-Example:
+```
 
-sql
-Copy code
-SET hello world
-GET hello
-📦 Project Structure
-bash
-Copy code
-tiny-redis/
-│
-├── src/
-│   ├── main.rs          # Server entry point
-│   ├── protocol.rs      # Parsing commands / minimal RESP
-│   ├── store.rs         # In-memory key-value store
-│   └── server.rs        # TCP listener & client management
-│
-└── README.md
-🧑‍💻 Example Commands
-Using netcat / raw TCP:
+Try these commands:
 
-bash
-Copy code
+```redis
+PING
+# => PONG
+
+SET greeting "Hello, World!"
+# => OK
+
+GET greeting
+# => "Hello, World!"
+
+ECHO "testing"
+# => "testing"
+
+DEL greeting
+# => (integer) 1
+```
+
+### Connect with `netcat`
+
+```bash
 nc localhost 6379
-Then:
+```
 
-powershell
-Copy code
-SET foo bar
-GET foo
-DEL foo
-🎯 Purpose
-Redis is powerful, but its C codebase is large and optimized for production.
-tiny-redis exists so developers can clearly understand:
+Send raw RESP commands:
 
-How a TCP server is structured
+```
+*1\r\n$4\r\nPING\r\n
+*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
+*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n
+```
 
-How commands & protocols are parsed
+---
 
-How an in-memory store works internally
+## Project Structure
 
-How state is shared between connections
+```
+tiny-redis/
+├── src/
+│   ├── main.rs         # Entry point, server initialization
+│   ├── server.rs       # TCP listener & connection handler
+│   ├── parser.rs       # RESP protocol parser
+│   ├── executor.rs     # Command parsing & execution
+│   └── db/
+│       └── mod.rs      # In-memory HashMap store
+├── Cargo.toml
+└── README.md
+```
 
-How async & concurrency models apply to databases
+### Module Overview
 
-🤝 Contributing
-PRs are welcome — especially around:
+- **`server`**: Manages TCP connections, reads bytes, delegates to handler
+- **`parser`**: Parses RESP protocol (arrays, bulk strings, integers)
+- **`executor`**: Converts parsed RESP into commands, executes them
+- **`db`**: Simple `HashMap<String, String>` wrapper
 
-Protocol parsing
+---
 
-New commands
+## Architecture
 
-Documentation
+```
+Client (redis-cli)
+      ↓
+TCP Connection
+      ↓
+[server.rs] Read bytes into buffer
+      ↓
+[parser.rs] Parse RESP → RespValue
+      ↓
+[executor.rs] Convert to Command enum → Execute
+      ↓
+[db.rs] Read/write HashMap
+      ↓
+[executor.rs] Generate RESP response
+      ↓
+[server.rs] Write response to client
+```
 
-Examples
+---
 
-Refactoring or cleanup
+## Roadmap
 
-Feel free to open an issue if you'd like help contributing.
+This is an intentionally minimal implementation. Here's what's next:
 
-📄 License
-MIT License — free to use, modify, distribute, and learn from.
+- [ ] **More commands**: `EXISTS`, `INCR`, `DECR`, `APPEND`, `STRLEN`
+- [ ] **Data structures**: Hashes, Lists, Sets
+- [ ] **Concurrency**: Async I/O with Tokio, multi-threaded executor
+- [ ] **TTL/Expiration**: Time-based key expiry
+- [ ] **Persistence**: Append-only file (AOF) or snapshotting
+- [ ] **Transactions**: `MULTI`/`EXEC` support
+- [ ] **Pub/Sub**: Basic message channels
+- [ ] **Benchmarks**: Performance testing & optimization
+- [ ] **Proper error handling**: Better RESP error responses
+
+---
+
+## Contributing
+
+PRs are welcome! Areas where help would be great:
+
+- Implementing new Redis commands
+- Adding more tests
+- Documentation improvements
+- Performance optimizations
+- Refactoring for clarity
+
+**Before submitting**: Run `cargo test` and `cargo clippy`.
+
+---
+
+## Testing
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+Tests cover:
+- RESP protocol parsing (arrays, strings, integers)
+- Command parsing and execution
+- Incomplete/partial command handling
+- Multi-command pipelining
+
+---
+
+## Learning Resources
+
+Want to dive deeper?
+
+- [Redis Protocol (RESP) Specification](https://redis.io/docs/reference/protocol-spec/)
+- [Build Your Own Redis (codecrafters.io)](https://codecrafters.io/challenges/redis)
+- [Tokio Tutorial](https://tokio.rs/tokio/tutorial) (for async version)
+- [The Rust Book](https://doc.rust-lang.org/book/)
+
+---
+
+## License
+
+MIT License. Free to use, modify, and learn from.
+
+---
+
+## Acknowledgments
+
+Inspired by:
+- **Redis** by Salvatore Sanfilippo
+- **mini-redis** (Tokio's tutorial project)
+- The Rust community's commitment to teaching systems programming
+
+---
+
+**Built with ❤️ and Rust**
