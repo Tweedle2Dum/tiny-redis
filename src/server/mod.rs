@@ -11,8 +11,6 @@ pub enum HandlerResult {
     Ok(Vec<u8>),
 }
 
-pub type Handler = fn(buffer: &mut Vec<u8>) -> HandlerResult;
-
 pub struct TcpServer {
     listener: TcpListener,
 }
@@ -24,20 +22,27 @@ impl TcpServer {
         Ok(TcpServer { listener })
     }
 
-    pub fn run(&self, handler: Handler) {
+    pub fn run<F>(&self, mut handler: F)
+    where
+        F: FnMut(&mut Vec<u8>) -> HandlerResult,
+    {
         for stream in self.listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    Self::handle_connection(stream, handler);
+                    Self::handle_connection(stream, &mut handler);
                 }
                 Err(e) => eprintln!("Connection failed: {}", e),
             }
         }
     }
 
-    fn handle_connection(mut stream: TcpStream, handler: Handler) {
+    fn handle_connection<F>(mut stream: TcpStream, handler: &mut F)
+    where
+        F: FnMut(&mut Vec<u8>) -> HandlerResult,
+    {
         let peer = stream.peer_addr().unwrap();
         println!("Client connected: {}", peer);
+
         let mut scratch = [0u8; 4096];
         let mut client_buffer: Vec<u8> = Vec::new();
 
@@ -50,6 +55,7 @@ impl TcpServer {
                 Ok(n) => {
                     client_buffer.extend_from_slice(&scratch[..n]);
                     println!("RAW BYTES = {:?}", &client_buffer);
+
                     match handler(&mut client_buffer) {
                         HandlerResult::Incomplete => {
                             // need more bytes
@@ -68,11 +74,6 @@ impl TcpServer {
                                 break;
                             }
                         }
-                    }
-                    // Echo back
-                    if let Err(e) = stream.write_all(&scratch[..n]) {
-                        println!("Write error: {}", e);
-                        break;
                     }
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
